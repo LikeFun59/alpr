@@ -1,0 +1,254 @@
+import asyncio
+import os
+import sys
+import time
+import uuid
+import cv2
+import numpy as np
+import threading
+import websockets
+from datetime import datetime, timedelta 
+from dotenv import load_dotenv
+from difflib import SequenceMatcher
+from PIL import Image
+from ultralytics import YOLO
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import utils
+
+# Загрузка переменных env
+load_dotenv()
+DEBUG = os.getenv("DEBUG") == "True"
+WS_PORT = int(os.getenv("WS_PORT"))
+RTSP_CAPTURE_CONFIG = os.getenv("RTSP_CAPTURE_CONFIG") 
+PURE_YOLO_MODEL_PATH = os.getenv("PURE_YOLO_MODEL_PATH") 
+LICENSE_PLATE_YOLO_MODEL_PATH = os.getenv("LICENSE_PLATE_YOLO_MODEL_PATH") 
+DB_ENABLED = os.getenv("DB_ENABLED") == "True"
+DB_SERVER = os.getenv("DB_SERVER")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+SAVE_RESULTS_ENABLED =  os.getenv("SAVE_RESULTS_ENABLED") == "True"
+RESULTS_PATH = os.getenv("RESULTS_PATH")
+SHOULD_SEND_SAME_RESULTS = os.getenv("SHOULD_SEND_SAME_RESULTS") == "True"
+SHOULD_TRY_LP_CROP=os.getenv("SHOULD_TRY_LP_CROP") == "True"
+MINIMUM_NUMBER_OF_CHARS_FOR_MATCH = int(os.getenv("MINIMUM_NUMBER_OF_CHARS_FOR_MATCH"))
+NUMBER_OF_VALIDATION_ROUNDS = int(os.getenv("NUMBER_OF_VALIDATION_ROUNDS"))
+NUMBER_OF_OCCURRENCES_TO_BE_VALID = int(os.getenv("NUMBER_OF_OCCURRENCES_TO_BE_VALID"))
+SKIP_BEFORE_Y_MAX = float(os.getenv("SKIP_BEFORE_Y_MAX"))
+
+# Инициализация глобальных статических переменных
+PURE_YOLO_MODEL = YOLO(PURE_YOLO_MODEL_PATH)
+LICENSE_PLATE_YOLO_MODEL = YOLO(LICENSE_PLATE_YOLO_MODEL_PATH)
+CAR_RELATED_LABELS = [
+    utils.normalize_label('car'), 
+    utils.normalize_label('motorcycle'), 
+    utils.normalize_label('bus'), 
+    utils.normalize_label('train'), 
+    utils.normalize_label('truck'),
+    utils.normalize_label('boat'),
+]
+
+def _print(string):
+    if DEBUG: print(string)
+
+############ Вебсокет сервер ############
+CONNECTED_SOCKETS = []
+async def handle_connection(websocket, path):
+    global CONNECTED_SOCKETS
+    CONNECTED_SOCKETS.append(websocket)
+    try:
+        await websocket.send("echo")
+        async for message in websocket:
+            pass
+    finally:
+        CONNECTED_SOCKETS.remove(websocket)
+async def run_websocket_server():
+    server = await websockets.serve(handle_connection, "", WS_PORT)
+    await server.wait_closed()
+
+############ Захват видео ############
+LATEST_FRAME = None
+def run_video_capture():
+    global LATEST_FRAME
+    while True:
+        capture = cv2.VideoCapture(RTSP_CAPTURE_CONFIG)
+        if capture.isOpened() is False:
+            _print("Не удается подключиться к видеозахвату. Повторите попытку через 5 секунд...")
+            LATEST_FRAME = None
+            time.sleep(5)
+            continue
+
+        while(capture.isOpened()):
+            able_to_read_frame, frame = capture.read()
+            if able_to_read_frame is False:
+                _print("Не удалось прочитать кадр из видеозахвата, переподключение...")
+                LATEST_FRAME = None
+                break
+
+            if DEBUG:
+                cv2.startWindowThread()
+                cv2.namedWindow("frame")
+                cv2.imshow("frame", cv2.resize(frame, (750, 750)))
+                cv2.waitKey(20)
+
+            LATEST_FRAME = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).astype(np.uint8))
+
+        capture.release()
+
+############ Распознование ############
+# [(Image, Image, str)] => array of (car image, license plate image, license plate as string)
+def detect_license_plates_from_frame(captured_frame: Image) -> [(Image, Image, str)]: # type: ignore
+    number_of_yolo_boxes, yolo_boxes = utils.detect_with_yolo(PURE_YOLO_MODEL, captured_frame, DEBUG)
+    if number_of_yolo_boxes == 0:
+        _print("Изображений автомобилей не найдено")
+        return []
+
+    license_plates_recognized = []
+    utils.prepare_env_for_reading_license_plates(DEBUG)
+    for (i, car_box) in enumerate(yolo_boxes):
+        box_label = utils.normalize_label(
+            PURE_YOLO_MODEL.names[int(car_box.cls)]
+        )
+        if box_label not in CAR_RELATED_LABELS:
+            _print(f"Найден label \"{box_label}\", однако этого нет в CAR_RELATED_LABELS, пропускаем")
+            continue
+
+        x_min, y_min, x_max, y_max = car_box.xyxy.cpu().detach().numpy()[0]
+        if y_max < SKIP_BEFORE_Y_MAX:
+            _print(f"Нашел машину, но она слишком далеко \"{y_max}\" (req \"{SKIP_BEFORE_Y_MAX}\"), пропускаем")
+            continue
+
+        car_image = captured_frame.crop((x_min, y_min, x_max, y_max))
+        if DEBUG:
+            car_image.save(utils.gen_intermediate_file_name(f"cropped_car", "jpg", i))
+
+        number_of_license_plate_boxes_found, license_plates_as_boxes = utils.detect_with_yolo(LICENSE_PLATE_YOLO_MODEL, car_image, DEBUG)
+        if number_of_license_plate_boxes_found == 0:
+            continue
+
+        for (j, license_plate_box) in enumerate(license_plates_as_boxes):
+            license_plate_image, license_plate_as_string = utils.read_license_plate(f"{i}_{j}", license_plate_box, car_image, 500, 20, DEBUG, SHOULD_TRY_LP_CROP, MINIMUM_NUMBER_OF_CHARS_FOR_MATCH)
+            if license_plate_as_string == "":
+                _print(f"Машина {i} ; Результат {j}, не удается найти какие-либо символы обнаруженного номерного знака")
+                continue
+            if len(license_plate_as_string) < MINIMUM_NUMBER_OF_CHARS_FOR_MATCH:
+                _print(f"Найден номерной знак {license_plate_as_string}, но он короче, чем {MINIMUM_NUMBER_OF_CHARS_FOR_MATCH}")
+                continue
+
+            _print(y_max)
+            _print(f"Найден номерной знак {license_plate_as_string}")
+            license_plates_recognized.append((car_image, license_plate_image, license_plate_as_string))
+
+    return license_plates_recognized
+
+# any => Image (it cannot be used as type)
+def validate_results_between_rounds(recognitions_between_rounds: list[list[(any, any, str)]], number_of_occurrences_to_be_valid: int):
+    license_plate_counts = {}
+    for recognitions in recognitions_between_rounds:
+        for _, _, license_plate_as_string in recognitions:
+            if license_plate_as_string in license_plate_counts:
+                license_plate_counts[license_plate_as_string] += 1
+            else:
+                license_plate_counts[license_plate_as_string] = 1
+    
+    validated_recognitions = []
+    for license_plate, times_found in license_plate_counts.items():
+        if times_found < number_of_occurrences_to_be_valid:
+            continue
+        
+        should_break_recognitions_loop = False
+        for recognitions in recognitions_between_rounds:
+            if should_break_recognitions_loop: break
+            for recognized_car_image, recognized_license_plate_image, recognized_license_plate_as_string in recognitions:
+                if should_break_recognitions_loop: break
+                if license_plate == recognized_license_plate_as_string:
+                    validated_recognitions.append((recognized_car_image, recognized_license_plate_image, recognized_license_plate_as_string))
+                    should_break_recognitions_loop = True
+
+    return validated_recognitions
+
+async def run_detection():
+    recognitions_between_rounds = []
+    license_plates_sent_history = []
+    while True:
+        await asyncio.sleep(0.01) # Проверка выполнения задачи сервера websocket
+        if LATEST_FRAME is None:
+            _print("LATEST_FRAME нет, ничего не нужно делать, спим 1 секунду...")
+            time.sleep(1)
+            continue
+
+        license_plates_recognized = detect_license_plates_from_frame(LATEST_FRAME.copy())
+        if len(license_plates_recognized) == 0:
+            continue
+
+        recognitions_between_rounds.append(license_plates_recognized)
+        if len(recognitions_between_rounds) != NUMBER_OF_VALIDATION_ROUNDS:
+            continue
+        
+        validated_results = validate_results_between_rounds(recognitions_between_rounds, NUMBER_OF_OCCURRENCES_TO_BE_VALID)
+        if len(validated_results) == 0:
+            if recognitions_between_rounds != []:
+                recognitions_between_rounds.pop(0)
+            continue
+            
+        _print("Отправка результатов: ")
+        _print(validated_results)
+        license_plates_sent_history = [s for s in license_plates_sent_history if datetime.now() - s[1] <= timedelta(minutes=5)]
+        for res in validated_results:
+            car_image_raw = res[0]
+            license_plate_image_raw = res[1]
+            license_plate_as_string = str(res[2]) # просто чтобы убедиться, что это строка
+            
+            if SHOULD_SEND_SAME_RESULTS == False and any((s[0] == license_plate_as_string or SequenceMatcher(None, s[0], license_plate_as_string).ratio() > 0.8) for s in license_plates_sent_history):
+                _print(f"Уже отправил этот номерной знак... Пропускаем (\"{license_plate_as_string}\")")
+                continue
+            license_plates_sent_history.append((license_plate_as_string, datetime.now()))
+
+            car_image = utils.img_to_bytes(car_image_raw)
+            license_plate_image = utils.img_to_bytes(license_plate_image_raw)
+            license_plate_uuid = str(uuid.uuid4())
+            license_plate_formated_string = license_plate_as_string + " => " + license_plate_uuid
+            for socket in CONNECTED_SOCKETS:
+                try:
+                    await socket.send(car_image)
+                    await socket.send(license_plate_image)
+                    await socket.send(license_plate_formated_string)
+                    _print("Запись (\"{license_plate_formated_string}\") отправляется")
+                except:
+                    _print("Сокет был закрыт до или во время отправки ответа сервером.")
+
+            save_thread = threading.Thread(target=utils.save_validated_result, args=(DB_ENABLED, license_plate_uuid, license_plate_as_string, DB_SERVER, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, SAVE_RESULTS_ENABLED, RESULTS_PATH, car_image_raw, license_plate_image_raw))
+            save_thread.start()
+
+        recognitions_between_rounds = []
+
+def init_websocket_server_and_detection():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    asyncio.ensure_future(run_websocket_server())
+    asyncio.ensure_future(run_detection())
+
+    try:
+        loop.run_forever()
+    finally:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+
+
+if __name__ == "__main__":
+    os.environ['OMP_THREAD_LIMIT'] = '2'
+    if SAVE_RESULTS_ENABLED:
+        if os.path.exists(RESULTS_PATH) == False:
+            os.mkdir(RESULTS_PATH)
+
+    capture_thread = threading.Thread(target=run_video_capture)
+    work_thread = threading.Thread(target=init_websocket_server_and_detection)
+
+    capture_thread.start()
+    work_thread.start()
+
+    capture_thread.join()
+    work_thread.join()
