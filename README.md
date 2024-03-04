@@ -55,7 +55,7 @@
    ```
 3. Вернитесь в корневую папку
 4. `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118`
-   - или эквивалент, [based on your system configuration](https://pytorch.org/#:~:text=Aid%20to%20Ukraine.-,INSTALL%20PYTORCH,-Select%20your%20preferences)
+   - или эквивалент, [based on your system configuration](https://pytorch.org/#,INSTALL%20PYTORCH,-Select%20your%20preferences)
 5. Установите [tesseract](https://tesseract-ocr.github.io/tessdoc/Installation.html)
 6. `pip install -r requirements.txt`
 7. Убедитесь, что вы делаете это с тем же пользователем (unix), с которым будет запускаться программа! В случае, если вы выполняете это под другим пользователем, обязательно выполните шаги 4-6 с `sudo -H -u <usr> pip3 install ...` префикс.
