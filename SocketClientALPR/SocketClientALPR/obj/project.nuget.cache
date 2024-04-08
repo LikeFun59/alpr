@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "dgSpecHash": "haTzft0l0U7iNuFo7gI8FhJCbcdNi2dLONTOPLhb/41fdX5xjg7GiPl5RuqPIbAFdayTMkt95YOSBeKC0OJxzQ==",
+  "success": true,
+  "projectFilePath": "C:\\Users\\rockb\\source\\repos\\SocketClientALPR\\SocketClientALPR\\SocketClientALPR.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\rockb\\.nuget\\packages\\materialdesigncolors\\2.1.4\\materialdesigncolors.2.1.4.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\materialdesignthemes\\4.9.0\\materialdesignthemes.4.9.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\microsoft.netcore.platforms\\3.1.0\\microsoft.netcore.platforms.3.1.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\microsoft.office.interop.excel\\15.0.4795.1001\\microsoft.office.interop.excel.15.0.4795.1001.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\microsoft.win32.registry\\4.7.0\\microsoft.win32.registry.4.7.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\microsoft.win32.systemevents\\8.0.0\\microsoft.win32.systemevents.8.0.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\microsoft.xaml.behaviors.wpf\\1.1.39\\microsoft.xaml.behaviors.wpf.1.1.39.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\runtime.native.system.data.sqlclient.sni\\4.7.0\\runtime.native.system.data.sqlclient.sni.4.7.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\runtime.win-arm64.runtime.native.system.data.sqlclient.sni\\4.4.0\\runtime.win-arm64.runtime.native.system.data.sqlclient.sni.4.4.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\runtime.win-x64.runtime.native.system.data.sqlclient.sni\\4.4.0\\runtime.win-x64.runtime.native.system.data.sqlclient.sni.4.4.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\runtime.win-x86.runtime.native.system.data.sqlclient.sni\\4.4.0\\runtime.win-x86.runtime.native.system.data.sqlclient.sni.4.4.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\system.data.sqlclient\\4.8.6\\system.data.sqlclient.4.8.6.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\system.drawing.common\\8.0.2\\system.drawing.common.8.0.2.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\system.security.accesscontrol\\4.7.0\\system.security.accesscontrol.4.7.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\system.security.principal.windows\\4.7.0\\system.security.principal.windows.4.7.0.nupkg.sha512",
+    "C:\\Users\\rockb\\.nuget\\packages\\websocketsharpfork\\1.0.4\\websocketsharpfork.1.0.4.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1701",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Пакет \"WebSocketSharpFork 1.0.4\" был восстановлен с помощью \".NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8\", а не целевой платформы проекта \"net6.0-windows7.0\". Этот пакет может быть не полностью совместим с вашим проектом.",
+      "libraryId": "WebSocketSharpFork",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    }
+  ]
+}
