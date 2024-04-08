@@ -239,7 +239,7 @@ def init_websocket_server_and_detection():
 
 
 if __name__ == "__main__":
-    os.environ['OMP_THREAD_LIMIT'] = '2'
+    os.environ['OMP_THREAD_LIMIT'] = '4'
     if SAVE_RESULTS_ENABLED:
         if os.path.exists(RESULTS_PATH) == False:
             os.mkdir(RESULTS_PATH)
